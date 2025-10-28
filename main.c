@@ -1,26 +1,44 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
+#define VERTEX_SHADER_PATH "shader/vertex_shader.glsl"
+#define FRAG_SHADER_PATH "shader/fragment_shader.glsl"
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
 
-const char* vertexShaderSource = "#version 330 core\n"
-    "layout (location = 0) in vec3 aPos;\n"     
-    "void main() {\n"
-    "   gl_Position = vec4(aPos, 1.0);\n"      
-    "}\0";
+char* get_shader_content(const char* fileName)
+{
+    FILE *fp;
+    long size = 0;
+    char* shaderContent;
+    
+    /* Read File to get size */
+    fp = fopen(fileName, "rb");
+    if(fp == NULL) {
+        return "";
+    }
+    fseek(fp, 0L, SEEK_END);
+    size = ftell(fp)+1;
+    fclose(fp);
 
-const char* fragmentShaderSource = "#version 330 core\n"
-    "out vec4 FragColor;\n"                       
-    "void main() {\n"
-    "   FragColor = vec4(0.4, 0.7, 0.9, 1.0);\n"   
-    "}\0";
+    /* Read File for Content */
+    fp = fopen(fileName, "r");
+    shaderContent = memset(malloc(size), '\0', size);
+    fread(shaderContent, 1, size-1, fp);
+    fclose(fp);
 
+    return shaderContent;
+}
 
 int main(void) {
+    const char* vertexShaderSource = get_shader_content(VERTEX_SHADER_PATH);
+    const char* fragmentShaderSource = get_shader_content(FRAG_SHADER_PATH);
+
     glfwInit();
 
     // Request an OpenGL 3.3 Core context
@@ -94,6 +112,7 @@ int main(void) {
 
         glUseProgram(shaderProgram);
         glBindVertexArray(VAO);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         glfwSwapBuffers(window);
