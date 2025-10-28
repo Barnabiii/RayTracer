@@ -63,9 +63,10 @@ int main(void) {
 
 
     GLfloat vertices[] = {
-        -0.5f, -0.5f, 0.0f,
-         -0.5f, 0.5f, 0.0f,
-         0.5f,  -0.5f, 0.0f
+        //positions             //colors
+        -0.5f, -0.5f,  0.0f,    1.0f,  0.0f,  0.0f,
+        -0.5f,  0.5f,  0.0f,    0.0f,  1.0f,  0.0f,
+         0.5f, -0.5f,  0.0f,    0.0f,  0.0f,  1.0f
     };
 
     // -------------------- Compile and Link shaders (Vertex and Fragment) into a Shader Program --------------------
@@ -98,8 +99,12 @@ int main(void) {
     
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW); // Copy data to GPU 
 
-    glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,3 * sizeof(float),(void*)0); // Tell OpenGL how to read VBO
+    // position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+    // color attribute
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3* sizeof(float)));
+    glEnableVertexAttribArray(1);
 
     //Clean up
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -112,11 +117,6 @@ int main(void) {
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
-
-        float timeValue = glfwGetTime();
-        float greenValue = (sin(timeValue*5.) / 4.0f) + 0.75f;
-        int vertexColorLocation = glGetUniformLocation(shaderProgram, "ourColor");
-        glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
 
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLES, 0, 3);
