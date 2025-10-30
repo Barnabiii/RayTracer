@@ -10,75 +10,50 @@
 
 #define VERTEX_SHADER_PATH "shader/vertex_shader.glsl"
 #define FRAG_SHADER_PATH "shader/fragment_shader.glsl"
+#define TEXTURE_PATH "container.jpg"
+
+typedef struct {
+    const float* vertices;
+    size_t vertexSize;
+    const unsigned int* indices;
+    size_t indexSize;
+} MeshData;
+
+typedef struct {
+    GLuint texture;
+    GLuint shader;
+} MeshMaterial;
+
+typedef struct {
+    GLuint vao;
+    GLuint vbo;
+    GLuint ebo;
+    GLsizei indexCount;
+} MeshBuffers;
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
 
-char* get_shader_content(const char* fileName)
-{
-    FILE *fp;
-    long size = 0;
-    char* shaderContent;
-    
-    /* Read File to get size */
-    fp = fopen(fileName, "rb");
-    if(fp == NULL) {
-        return "";
-    }
-    fseek(fp, 0L, SEEK_END);
-    size = ftell(fp)+1;
-    fclose(fp);
+char* get_shader_content(const char* fileName) {
+    FILE *fp = fopen(fileName, "rb");
+    if (!fp) return NULL;
 
-    /* Read File for Content */
-    fp = fopen(fileName, "r");
-    shaderContent = memset(malloc(size), '\0', size);
-    fread(shaderContent, 1, size-1, fp);
-    fclose(fp);
+    if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return NULL; }
+    long size = ftell(fp);
+    if (size < 0) { fclose(fp); return NULL; }
+    rewind(fp);
 
+    char* shaderContent = malloc((size_t)size + 1);
+    if (!shaderContent) { fclose(fp); return NULL; }
+
+    size_t read = fread(shaderContent, 1, (size_t)size, fp);
+    shaderContent[read] = '\0';
+    fclose(fp);
     return shaderContent;
 }
 
-int main(void) {
-    const char* vertexShaderSource = get_shader_content(VERTEX_SHADER_PATH);
-    const char* fragmentShaderSource = get_shader_content(FRAG_SHADER_PATH);
-
-    glfwInit();
-
-    // Request an OpenGL 3.3 Core context
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL Triangle (C)", NULL, NULL);
-    if (window == NULL) {
-        fprintf(stderr,"Failed to create GLFW window");
-        glfwTerminate();
-        return -1;
-    }
-    glfwMakeContextCurrent(window); 
-
-    gladLoadGL(); // init GLAD which loads OpenGL
-
-    glViewport(0, 0, 800, 600);
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-
-
-
-    float vertices[] = {
-        // positions            // colors              // texture coords
-         0.5f,  0.5f,  0.0f,    1.0f,  0.0f,  0.0f,    1.0f,  1.0f, // top right
-        -0.5f,  0.5f,  0.0f,    0.0f,  1.0f,  0.0f,    0.0f,  1.0f, // top left 
-        -0.5f, -0.5f,  0.0f,    0.0f,  0.0f,  1.0f,    0.0f,  0.0f, // bottom left
-         0.5f, -0.5f,  0.0f,    0.0f,  0.0f,  0.0f,    1.0f,  0.0f  // bottom right
-    };
-
-    unsigned int indices[] = {
-        0,1,3,  //first triangle
-        1,2,3   //second triangle
-    };
-
-    // -------------------- Compile and Link shaders (Vertex and Fragment) into a Shader Program --------------------
+GLuint createShader(const char* vertexShaderSource, const char* fragmentShaderSource) {
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
     glCompileShader(vertexShader);
@@ -87,46 +62,47 @@ int main(void) {
     glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
     glCompileShader(fragmentShader);
 
-    GLuint shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
+    glLinkProgram(program);
 
-    // Delete the individual shaders; they’re now linked into the program
+    glDetachShader(program, vertexShader);
     glDeleteShader(vertexShader);
+    glDetachShader(program, fragmentShader);
     glDeleteShader(fragmentShader);
 
-    // -------------------- Generating a Texture --------------------
-    unsigned int texture;
+    return program;
+}
+
+GLuint loadTexture(char* texture_path) {
+    GLuint texture;
     glGenTextures(1, &texture);  
     glBindTexture(GL_TEXTURE_2D, texture);  
 
     int width, height, nrChannels;
-    unsigned char *data = stbi_load("container.jpg", &width, &height, &nrChannels, 0); 
+    unsigned char *data = stbi_load(texture_path, &width, &height, &nrChannels, 0); 
     if(!data) {
         fprintf(stderr,"Failed to load Texture");
+        glDeleteTextures(1, &texture);
         return -1;
     }
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     stbi_image_free(data);
+    return texture;
+}
 
-    // -------------------- Create VBO and VAO --------------------
-    GLuint VAO, VBO, EBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
+void bindBuffers(MeshBuffers* mbuf, MeshData* data) {
+    glBindVertexArray(mbuf->vao);
     
-    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, mbuf->vbo);
+    glBufferData(GL_ARRAY_BUFFER, data->vertexSize, data->vertices, GL_STATIC_DRAW);
     
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW); 
-
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mbuf->ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, data->indexSize, data->indices, GL_STATIC_DRAW); 
 
     
     // position attribute
@@ -141,30 +117,111 @@ int main(void) {
 
     glBindBuffer(GL_ARRAY_BUFFER, 0); 
     glBindVertexArray(0);
+}
 
-    // -------------------- Render Loop --------------------
+MeshBuffers CreateGPUMesh(MeshData* data) {
+    MeshBuffers m = {0};
+    glGenVertexArrays(1, &m.vao);
+    glGenBuffers(1, &m.vbo);
+    glGenBuffers(1, &m.ebo);
+    
+    bindBuffers(&m, data);
+    m.indexCount = data->indexSize / sizeof(unsigned int);
+    return m;
+}
+
+void drawMesh(MeshBuffers* mbuf, MeshMaterial* mMat) {
+
+    glBindTexture(GL_TEXTURE_2D, mMat->texture);
+
+    glUseProgram(mMat->shader);
+
+    glBindVertexArray(mbuf->vao);
+    //glDrawArrays(GL_TRIANGLES, 1, 3);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+}
+
+int main(void) {
+    if(!glfwInit()) {
+        fprintf(stderr,"Failed to initialize glfw");
+        return -1;
+    }
+
+    // Request an OpenGL 3.3 Core context
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL Triangle (C)", NULL, NULL);
+    if (window == NULL) {
+        fprintf(stderr,"Failed to create GLFW window");
+        glfwTerminate();
+        return -1;
+    }
+    glfwMakeContextCurrent(window); 
+
+    if(!gladLoadGL()) {
+        fprintf(stderr,"Failed to initialize GLAD");
+        glfwTerminate();
+        return -1;
+    }
+
+    glViewport(0, 0, 800, 600);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    float vertices[] = {
+    // positions            // colors              // texture coords
+     0.5f,  0.5f,  0.0f,    1.0f,  0.0f,  0.0f,    1.0f,  1.0f, // top right
+    -0.5f,  0.5f,  0.0f,    0.0f,  1.0f,  0.0f,    0.0f,  1.0f, // top left 
+    -0.5f, -0.5f,  0.0f,    0.0f,  0.0f,  1.0f,    0.0f,  0.0f, // bottom left
+     0.5f, -0.5f,  0.0f,    0.0f,  0.0f,  0.0f,    1.0f,  0.0f  // bottom right
+    };
+
+    unsigned int indices[] = {
+        0,1,3,  //first triangle
+        1,2,3   //second triangle
+    };
+
+    const char* vertexShaderSource = get_shader_content(VERTEX_SHADER_PATH);
+    const char* fragmentShaderSource = get_shader_content(FRAG_SHADER_PATH);
+    if (!vertexShaderSource || !fragmentShaderSource) {
+    fprintf(stderr, "Failed to load shader files\n");
+        if (vertexShaderSource) free((void*)vertexShaderSource);
+        if (fragmentShaderSource) free((void*)fragmentShaderSource);
+        return -1;
+    }
+
+    GLuint texture = loadTexture(TEXTURE_PATH);
+    if (texture == -1) {
+        fprintf(stderr, "Texture load failed\n");
+    }
+
+    GLuint shaderProgram = createShader(vertexShaderSource,fragmentShaderSource);
+
+    MeshData quad = {vertices, sizeof(vertices), indices, sizeof(indices)};
+    MeshBuffers quadbuf = CreateGPUMesh(&quad);
+    MeshMaterial quadMat = {0};
+    quadMat.texture = texture;
+    quadMat.shader = shaderProgram;
+
     while (!glfwWindowShouldClose(window)) {
-        // Clear the screen
         glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glBindTexture(GL_TEXTURE_2D, texture);
-
-        glUseProgram(shaderProgram);
-
-        glBindVertexArray(VAO);
-        //glDrawArrays(GL_TRIANGLES, 1, 3);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        drawMesh(&quadbuf,&quadMat);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    // -------------------- Cleanup --------------------
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
+    glDeleteVertexArrays(1, &quadbuf.vao);
+    glDeleteBuffers(1, &quadbuf.vbo);
+    glDeleteBuffers(1, &quadbuf.ebo);
+    glDeleteTextures(1, &texture);
     glDeleteProgram(shaderProgram);
-
+    free((void*)vertexShaderSource);
+    free((void*)fragmentShaderSource);
     glfwTerminate();
     return 0;
 }
