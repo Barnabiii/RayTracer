@@ -10,7 +10,10 @@
 
 #define VERTEX_SHADER_PATH "shader/vertex_shader.glsl"
 #define FRAG_SHADER_PATH "shader/fragment_shader.glsl"
-#define TEXTURE_PATH "container.jpg"
+#define COMPUTE_SHADER_PATH "shader/compute_shader.glsl"
+
+const int SCREEN_WIDTH = 800;
+const int SCREEN_HEIGHT = 600;
 
 typedef struct {
     const float* vertices;
@@ -75,26 +78,6 @@ GLuint createShader(const char* vertexShaderSource, const char* fragmentShaderSo
     return program;
 }
 
-GLuint loadTexture(char* texture_path) {
-    GLuint texture;
-    glGenTextures(1, &texture);  
-    glBindTexture(GL_TEXTURE_2D, texture);  
-
-    int width, height, nrChannels;
-    unsigned char *data = stbi_load(texture_path, &width, &height, &nrChannels, 0); 
-    if(!data) {
-        fprintf(stderr,"Failed to load Texture");
-        glDeleteTextures(1, &texture);
-        return -1;
-    }
-    GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
-    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    stbi_image_free(data);
-    return texture;
-}
-
 void bindBuffers(MeshBuffers* mbuf, MeshData* data) {
     glBindVertexArray(mbuf->vao);
     
@@ -106,14 +89,11 @@ void bindBuffers(MeshBuffers* mbuf, MeshData* data) {
 
     
     // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    // color attribute
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3* sizeof(float)));
+    // UVs attribute
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3* sizeof(float)));
     glEnableVertexAttribArray(1);
-
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6* sizeof(float)));
-    glEnableVertexAttribArray(2);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0); 
     glBindVertexArray(0);
@@ -153,7 +133,7 @@ int main(void) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL Triangle (C)", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "OpenGL Triangle (C)", NULL, NULL);
     if (window == NULL) {
         fprintf(stderr,"Failed to create GLFW window");
         glfwTerminate();
@@ -171,15 +151,15 @@ int main(void) {
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
     float vertices[] = {
-    // positions            // colors              // texture coords
-     0.5f,  0.5f,  0.0f,    1.0f,  0.0f,  0.0f,    1.0f,  1.0f, // top right
-    -0.5f,  0.5f,  0.0f,    0.0f,  1.0f,  0.0f,    0.0f,  1.0f, // top left 
-    -0.5f, -0.5f,  0.0f,    0.0f,  0.0f,  1.0f,    0.0f,  0.0f, // bottom left
-     0.5f, -0.5f,  0.0f,    0.0f,  0.0f,  0.0f,    1.0f,  0.0f  // bottom right
+    // positions           //UVs
+    -1.0f, -1.0f,  0.0f,   0.0f,  0.0f,
+    -1.0f,  1.0f,  0.0f,   0.0f,  1.0f,
+     1.0f, -1.0f,  0.0f,   1.0f,  0.0f,
+     1.0f,  1.0f,  0.0f,   1.0f,  1.0f
     };
 
     unsigned int indices[] = {
-        0,1,3,  //first triangle
+        0,1,2,  //first triangle
         1,2,3   //second triangle
     };
 
@@ -192,36 +172,70 @@ int main(void) {
         return -1;
     }
 
-    GLuint texture = loadTexture(TEXTURE_PATH);
-    if (texture == -1) {
-        fprintf(stderr, "Texture load failed\n");
-    }
+    GLuint screenTexture;
+    glCreateTextures(GL_TEXTURE_2D, 1, &screenTexture);
+    glTextureParameteri(screenTexture, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTextureParameteri(screenTexture, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTextureParameteri(screenTexture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTextureParameteri(screenTexture, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTextureStorage2D(screenTexture, 1, GL_RGBA32F, SCREEN_WIDTH, SCREEN_HEIGHT);
+	glBindImageTexture(0, screenTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 
-    GLuint shaderProgram = createShader(vertexShaderSource,fragmentShaderSource);
+    GLuint screenShaderProgram = createShader(vertexShaderSource,fragmentShaderSource);
 
     MeshData quad = {vertices, sizeof(vertices), indices, sizeof(indices)};
     MeshBuffers quadbuf = CreateGPUMesh(&quad);
-    MeshMaterial quadMat = {0};
-    quadMat.texture = texture;
-    quadMat.shader = shaderProgram;
+
+    //setup compute shader
+    const char* computeShaderSource = get_shader_content(COMPUTE_SHADER_PATH);
+
+    GLuint computeShader = glCreateShader(GL_COMPUTE_SHADER);
+    glShaderSource(computeShader, 1, &computeShaderSource, NULL);
+    glCompileShader(computeShader);
+
+    GLuint computeProgram = glCreateProgram();
+    glAttachShader(computeProgram, computeShader);
+    glLinkProgram(computeProgram);
+
+    glDetachShader(computeProgram, computeShader);
+    glDeleteShader(computeShader);
+
+    double time = 0.0;
+    double last_time = 0.0;
+    long frameCount = 0;
+    float avgFPS = 0;
 
     while (!glfwWindowShouldClose(window)) {
-        glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        frameCount++;
+        last_time = time;
+        time = glfwGetTime();
+        double delta = time-last_time;
+        int fps = 1/delta;
+        avgFPS =(((float)frameCount-1)/(float)frameCount)*avgFPS + fps/(float)frameCount;
+        //printf("FPS: %d\n",fps);
 
-        drawMesh(&quadbuf,&quadMat);
+        glUseProgram(computeProgram);
+        glDispatchCompute(ceil(SCREEN_WIDTH/8),ceil(SCREEN_HEIGHT/4),1);
+        glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
+        glUseProgram(screenShaderProgram);
+        glBindTextureUnit(0, screenTexture);
+        glUniform1i(glGetUniformLocation(screenShaderProgram, "screen"), 0);
+        glBindVertexArray(quadbuf.vao);
+        glDrawElements(GL_TRIANGLES, sizeof(indices)/sizeof(indices[0]), GL_UNSIGNED_INT, 0);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-
+    printf("avg framerate: %f\n",avgFPS);
     glDeleteVertexArrays(1, &quadbuf.vao);
     glDeleteBuffers(1, &quadbuf.vbo);
     glDeleteBuffers(1, &quadbuf.ebo);
-    glDeleteTextures(1, &texture);
-    glDeleteProgram(shaderProgram);
+    glDeleteTextures(1, &screenTexture);
+    glDeleteProgram(screenShaderProgram);
     free((void*)vertexShaderSource);
     free((void*)fragmentShaderSource);
+    free((void*)computeShaderSource);
     glfwTerminate();
     return 0;
 }
