@@ -12,8 +12,8 @@
 #define FRAG_SHADER_PATH "shader/fragment_shader.glsl"
 #define COMPUTE_SHADER_PATH "shader/compute_shader.glsl"
 
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 600;
+const int SCREEN_WIDTH = 1000;
+const int SCREEN_HEIGHT= 1000;
 
 typedef struct {
     const float* vertices;
@@ -147,7 +147,7 @@ int main(void) {
         return -1;
     }
 
-    glViewport(0, 0, 800, 600);
+    glViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
     float vertices[] = {
@@ -215,6 +215,7 @@ int main(void) {
         //printf("FPS: %d\n",fps);
 
         glUseProgram(computeProgram);
+        glUniform1f(0, time);
         glDispatchCompute(ceil(SCREEN_WIDTH/8),ceil(SCREEN_HEIGHT/4),1);
         glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
