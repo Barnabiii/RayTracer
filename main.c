@@ -215,6 +215,7 @@ int main(void) {
         //printf("FPS: %d\n",fps);
 
         glUseProgram(computeProgram);
+        glUniform1f(0, time);
         glDispatchCompute(ceil(SCREEN_WIDTH/8),ceil(SCREEN_HEIGHT/4),1);
         glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
