@@ -12,7 +12,7 @@ void main() {
     c.y = (3.0*UVs.y) - 1.5;
 
     vec3 px = vec3(0.0);
-    float depth = 10;
+    float depth = floor(time*2.0);
     vec2 z = vec2(0.0);
 
     int i;
@@ -20,7 +20,7 @@ void main() {
         z = vec2(pow(z.x,2.0) - pow(z.y,2.0),(2.0*z.x*z.y)) + c;
         if (length(z) > 2.0) {
             float s = float(i)/depth;
-            px = vec3((cos(s*3.14)+1)*0.3, s, 1.5  -s);
+            px = vec3((cos(pow(1.4,s*8))+1)*0.3, s, 1.5  -s);
             break;
         }
     }
