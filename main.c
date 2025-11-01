@@ -6,15 +6,22 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image/stb_image.h"
-
 #define VERTEX_SHADER_PATH "shader/vertex_shader.glsl"
 #define FRAG_SHADER_PATH "shader/fragment_shader.glsl"
 #define COMPUTE_SHADER_PATH "shader/compute_shader.glsl"
 
 const int SCREEN_WIDTH = 1000;
 const int SCREEN_HEIGHT = 857;
+
+double time = 0.0;
+double last_time = 0.0;
+long frameCount = 0;
+float avgFPS = 0;
+
+typedef struct {
+    double x;
+    double y;
+} vec2;
 
 typedef struct {
     const float* vertices;
@@ -123,6 +130,16 @@ void drawMesh(MeshBuffers* mbuf, MeshMaterial* mMat) {
 
 }
 
+void CalcFPS() {
+    frameCount++;
+    last_time = time;
+    time = glfwGetTime();
+    double delta = time-last_time;
+    int fps = 1/delta;
+    avgFPS =(((float)frameCount-1)/(float)frameCount)*avgFPS + fps/(float)frameCount;
+    //printf("FPS: %d\n",fps);
+}
+
 int main(void) {
     if(!glfwInit()) {
         fprintf(stderr,"Failed to initialize glfw");
@@ -201,23 +218,44 @@ int main(void) {
     glDetachShader(computeProgram, computeShader);
     glDeleteShader(computeShader);
 
-    double time = 0.0;
-    double last_time = 0.0;
-    long frameCount = 0;
-    float avgFPS = 0;
+    int was_click = 0;
+    int click = 0;
+    vec2 A = {0,0};
+    vec2 B = {SCREEN_WIDTH,SCREEN_HEIGHT};
+    vec2 C = {0,0};
+    vec2 D = {0,0};
 
     while (!glfwWindowShouldClose(window)) {
         Sleep(1);
-        frameCount++;
-        last_time = time;
-        time = glfwGetTime();
-        double delta = time-last_time;
-        int fps = 1/delta;
-        avgFPS =(((float)frameCount-1)/(float)frameCount)*avgFPS + fps/(float)frameCount;
-        //printf("FPS: %d\n",fps);
+        CalcFPS();
+        vec2 mousepos = {0,0};
+        glfwGetCursorPos(window, &mousepos.x, &mousepos.y);
+        was_click = click;
+        click = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+        if(click && !was_click) {
+            C = (vec2){mousepos.x,SCREEN_HEIGHT-mousepos.y};
+        }
+        if(was_click && !click) {
+            D = (vec2){mousepos.x,SCREEN_HEIGHT-mousepos.y};
+            vec2 scale = {(B.x-A.x)/SCREEN_WIDTH,(B.y-A.y)/SCREEN_HEIGHT};
+            vec2 CD = {D.x-C.x,D.y-C.y};
+            A = (vec2){A.x+(C.x*scale.x),A.y+(C.y*scale.y)};
+            B = (vec2){CD.x*scale.x + A.x, CD.y*scale.y + A.y};
+            C = (vec2){0,0};
+            D = (vec2){0,0};
+        }
+
+        if (glfwGetKey(window,GLFW_KEY_R)) {
+            A = (vec2){0,0};
+            B = (vec2){SCREEN_WIDTH,SCREEN_HEIGHT};
+            C = (vec2){0,0};
+            D = (vec2){0,0};
+        }
 
         glUseProgram(computeProgram);
         glUniform1f(0, time);
+        glUniform4f(1, A.x,A.y,B.x,B.y);
+        glUniform4f(2,C.x,C.y,mousepos.x,mousepos.y);
         glDispatchCompute(ceil(SCREEN_WIDTH/8),ceil(SCREEN_HEIGHT/4),1);
         glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
